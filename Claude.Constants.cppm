@@ -1,7 +1,6 @@
 module;
 
 #include <string>
-#include <string_view>
 
 #include "Utility/fixed_string.h"
 
@@ -15,7 +14,7 @@ using fixstr::fixed_string;
 
 export namespace Claude
 {
-	export inline namespace Constants
+	export namespace Constants
 	{
         inline namespace Header
         {
@@ -39,54 +38,53 @@ export namespace Claude
 
         inline namespace Types
         {
-            constexpr fixed_string    TextMessage { "text" };
+            constexpr fixed_string    Text { "text" };
             constexpr fixed_string    Image{ "image" };
         }
 	}
 
     using namespace JSON;
-    export inline namespace MessageFields
+    export namespace Fields
     {
-        using Role = Default<Parameter<"role", string>, Roles::User>;
+        export inline namespace Message
+        {
+            using Type = Parameter<"type", string>;
+            using Text = Parameter<"text", string>;
+            using Role = Parameter<"role", string>;
 
-        using Type = Parameter<"type", string>;
+            using TextContent = Object<Default<Type, Constants::Types::Text>, Text>;
+            using Content = Parameter<"content", List<Fields::TextContent>>;
+        }
 
-        using Message = Parameter<"content", string>;
-        using SimpleMessage = Object<Role, Message>;
+        export inline namespace Transaction
+        {
+            using Model = Parameter<"model", string>;
+            using System = Parameter<"system", string>;
 
-        using Text = Parameter<"text", string>;
-        using Line = Object<Default<Type, Types::TextMessage>, Text>;
+            using Tokens = Parameter<"max_tokens", int>;
+            using Top_K = Parameter<"top_k", int>;
+            using Top_P = Parameter<"top_p", int>;
 
-        using MessageLines = Parameter<"content", List<Line>>;
-        using MessageList = Object<Role, MessageLines>;
+            using Temperature = Parameter<"temperature", float>;
+
+            using MessageContent = Parameter<"content", List<Text>>;
+        }
     }
 
-    export inline namespace TransactionFields
+    export using Message = Object<Default<Fields::Role, Constants::User>, Fields::Content>;
+
+    export namespace Fields
     {
-        using Model = Parameter<"model", string>;
-        using System = Parameter<"system", string>;
-
-        using Tokens = Parameter<"max_tokens", int>;
-        using Top_K = Parameter<"top_k", int>;
-        using Top_P = Parameter<"top_p", int>;
-
-        using Temperature = Parameter<"temperature", float>;
+        using Messages = Parameter<"messages", List<Claude::Message>>;
     }
 
-    export inline namespace Objects
-    {
-        using namespace TransactionFields;
-        using namespace MessageFields;
 
-        using Messages = Parameter<"messages", List<SimpleMessage, MessageList>>;
-
-        using Transaction = Object<
-            Default<Model, Constants::Claude_3_5_Sonnet>,
-            Default<Tokens, 1024>,
-            System,
-            Temperature,
-            Top_K,
-            Top_P,
-            Messages>;
-    }
+    export using Transaction = Object<
+                    Default<Fields::Model, Constants::Claude_3_5_Sonnet>,
+                    Default<Fields::Tokens, 1024>,
+                    Fields::System,
+                    Fields::Temperature,
+                    Fields::Top_K,
+                    Fields::Top_P,
+                    Fields::Messages>;
 }

@@ -1,6 +1,5 @@
 module;
 
-#include <iostream>
 #include <format>
 #include <string>
 #include <type_traits>
@@ -46,7 +45,8 @@ export namespace Claude
 
         export struct Base {
             virtual ~Base() = default;
-            virtual string print() = 0;
+            virtual bool IsActive() const = 0;
+            virtual size_t Serialize(char * Destination, size_t Capacity) = 0;
         };
 
         export template<fixed_string Key, typename T>
@@ -55,9 +55,10 @@ export namespace Claude
             using Type = T;
             Parameter();
             Parameter(const T& value);
+            bool IsActive() const override;
             void Set(const T& value, const bool UseWrap = true);
             T& Get();
-            string print() override;
+            size_t Serialize(char* Destination, size_t Capacity) override;
 
         private:
             const string m_Key;
@@ -98,7 +99,8 @@ export namespace Claude
             template<typename P, typename... Args>
             P* Create(Args&&... args) requires (HasCreate<Params, P> || ...);
 
-            string print() override;
+            bool IsActive() const override;
+            size_t Serialize(char* Destination, size_t Capacity) override;
         };
 
         export template<typename... Params>
@@ -106,8 +108,9 @@ export namespace Claude
         public:
             template<typename P>
             P& Create() requires (std::is_same_v<P, Params> || ...);
-            string print() override;
 
+            bool IsActive() const override;
+            size_t Serialize(char* Destination, size_t Capacity) override;
         private:
             std::vector<std::variant<Params...>> m_ListObjects;
         };
@@ -137,24 +140,13 @@ T& Parameter<Key, T>::Get() {
     return m_Value;
 }
 
-template<fixed_string Key, typename T>
-string Parameter<Key, T>::print() {
-    if (!m_InUse)
-        return "";
-
-    if constexpr (std::is_base_of_v<Base, T>)
-        return std::format("\"{}\": {}", m_Key, m_Value.print());
-    else
-        return std::format("\"{}\": {}", m_Key, m_Value);
-}
-
 template<typename... Params>
 template<typename P, typename T>
 void Object<Params...>::Set(const T& value) requires
 (std::is_base_of_v<P, Object>) &&
 (std::is_same_v<T, typename P::Type> || std::is_same_v<typename P::Type, string>)
 {
-        static_cast<P&>(*this).Set(value);
+    static_cast<P&>(*this).Set(value);
 }
 
 template<typename... Params>
@@ -168,7 +160,6 @@ template<typename Result, typename Arg>
 constexpr void TrySet(Result* result, Arg&& arg) {
     if constexpr (requires { result->template Set<std::decay_t<Arg>>(arg); }) {
         static_cast<std::decay_t<Arg>*>(result)->Set(arg.Get(), false);
-        //result->template Set<std::decay_t<Arg>>(arg.Get());
     }
 }
 
@@ -194,29 +185,97 @@ typename P* Object<Params...>::Create(Args&&... args) requires (HasCreate<Params
 }
 
 template<typename... Params>
-string Object<Params...>::print() {
-    int first = 0;
-    string temp = "";
-    string result = "{";
-    bool printer[]{ (result += (!(temp = Params::print()).empty() && ++first > 1 ? ", " + temp : temp), true)... };
-    result += "}";
-    return result;
-}
-
-template<typename... Params>
 template<typename P>
 P& List<Params...>::Create() requires (std::is_same_v<P, Params> || ...) {
     m_ListObjects.emplace_back(P());
     return std::get<P>(m_ListObjects.back());
 }
 
+template<fixed_string Key, typename T>
+bool Parameter<Key, T>::IsActive() const { return m_InUse; }
+
 template<typename... Params>
-string List<Params...>::print() {
-    std::string result = "[";
+bool Object<Params...>::IsActive() const { return (... || Params::IsActive()); }
+
+template<typename... Params>
+bool List<Params...>::IsActive() const 
+{
+    bool IsActive = false;
     for (size_t i = 0; i < m_ListObjects.size(); ++i) {
-        if (i > 0) result += ", ";
-        result += std::visit([](auto&& obj) { return obj.print(); }, m_ListObjects[i]);
+        IsActive |= std::visit([&](auto&& obj) { return obj.IsActive(); }, m_ListObjects[i]);
     }
-    result += "]";
-    return result;
+    return IsActive;
+}
+
+template<fixed_string Key, typename T>
+size_t Parameter<Key, T>::Serialize(char* Destination, size_t Capacity) {
+    if (!m_InUse)
+        return 0;
+
+    size_t Written = 0;
+    if constexpr (std::is_base_of_v<Base, T>) {
+
+        std::format_to_n_result key_results = std::format_to_n(Destination, Capacity, "\"{}\":", m_Key);
+        Written += key_results.size;
+        Written += m_Value.Serialize(Destination + Written, Capacity - Written);
+        Destination[Written] = '\0';
+    }
+    else {
+        std::format_to_n_result result = std::format_to_n(Destination, Capacity, "\"{}\":{}", m_Key, m_Value);
+        Written += result.size;
+        Destination[Written] = '\0';
+    }
+    return Written;
+}
+
+template<typename... Params>
+size_t Object<Params...>::Serialize(char* Destination, size_t Capacity) {
+    if (Capacity < 2)
+        return 0;
+
+    size_t Written = 0;
+    Destination[Written++] = '{';
+    (..., ((Params::IsActive() && Written > 1 ? (Destination[Written++] = ',') : (false)),
+        (Written += Params::Serialize(Destination + Written, Capacity - Written))));
+    Destination[Written++] = '}';
+    Destination[Written] = '\0';
+
+    return Written;
+}
+
+template<typename... Params>
+size_t List<Params...>::Serialize(char* Destination, size_t Capacity) {
+    if (Capacity < 2)
+        return 0;
+
+    size_t Written = 0;
+    Destination[Written++] = '[';
+
+    for (size_t i = 0; i < m_ListObjects.size(); ++i) {
+
+        char* WriteHead = (Destination + Written);
+        size_t Remaining = (Capacity - Written);
+        bool IncludeComma = (Written > 1) && (Remaining > 2);
+
+        Written += std::visit([WriteHead, Remaining, IncludeComma](auto&& obj) -> size_t
+            {
+                if (!obj.IsActive())
+                    return 0;
+
+                if (!IncludeComma)
+                {    
+                    return obj.Serialize(WriteHead, Remaining);
+                }
+
+                size_t Offset = 0;
+                WriteHead[Offset++] = ',';
+                WriteHead[Offset++] = ' ';
+
+                return (Offset + obj.Serialize((WriteHead + Offset), (Remaining - Offset)));
+;
+            }, m_ListObjects[i]);
+    }
+    Destination[Written++] = ']';
+    Destination[Written] = '\0';
+    return Written;
 }
