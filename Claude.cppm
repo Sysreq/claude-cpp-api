@@ -10,8 +10,9 @@ module;
 #pragma comment(lib, "libcurl.lib")
 
 export module Claude;
-export import :Json;
+export import :JSON;
 export import :Constants;
+export import :Objects;
 
 using std::string;
 
@@ -111,7 +112,10 @@ void API::Send(JSON::Base* t)
     if (!m_Context)
         std::runtime_error("CURL has not been started.");
 
-    m_OutgoingPosition = t->Serialize(m_OutgoingBuffer, m_MaxOutgoingSize);
+    size_t Remaining = m_MaxOutgoingSize;
+    char* BufferStart = m_OutgoingBuffer;
+
+    m_OutgoingPosition = t->Serialize(BufferStart, Remaining);
 
     curl_easy_setopt(m_Context, CURLOPT_URL, "https://api.anthropic.com/v1/messages", 443);
     curl_easy_setopt(m_Context, CURLOPT_POST, 1L);
@@ -119,8 +123,6 @@ void API::Send(JSON::Base* t)
     curl_easy_setopt(m_Context, CURLOPT_HTTPHEADER, m_Header);
     curl_easy_setopt(m_Context, CURLOPT_POSTFIELDSIZE, m_OutgoingPosition);
     curl_easy_setopt(m_Context, CURLOPT_POSTFIELDS, m_OutgoingBuffer);
-
-    //curl_easy_setopt(m_Context, CURLOPT_READFUNCTION, this->RecieveResponse);
 
     m_LastError = curl_easy_perform(m_Context);
     std::cout << "Message Sent\n";

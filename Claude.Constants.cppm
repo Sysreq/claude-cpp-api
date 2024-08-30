@@ -5,17 +5,36 @@ module;
 #include "Utility/fixed_string.h"
 
 export module Claude:Constants;
-import :Json;
+import :JSON;
 
-using std::string_view;
 using std::string;
 
 using fixstr::fixed_string;
 
 export namespace Claude
 {
-	export namespace Constants
-	{
+    export inline namespace Utilities
+    {
+        export template<JSON::IsParameter P, auto DefaultValue>
+        class SetDefault : public P {
+        public:
+            SetDefault() : P() {
+                this->Set(DefaultValue);
+            }
+        };
+
+        export template<JSON::IsParameter P, fixed_string DefaultValue>
+            requires (std::is_same_v<typename P::Type, string>)
+        class SetDefault<P, DefaultValue> : public P {
+        public:
+            SetDefault() : P() {
+                this->Set(DefaultValue.data());
+            }
+        };
+    }
+
+    export namespace Constants
+    {
         inline namespace Header
         {
             constexpr fixed_string   VersionDate{ "2023-06-01" };
@@ -38,25 +57,22 @@ export namespace Claude
 
         inline namespace Types
         {
-            constexpr fixed_string    Text { "text" };
+            constexpr fixed_string    Text{ "text" };
             constexpr fixed_string    Image{ "image" };
         }
-	}
+    }
 
     using namespace JSON;
     export namespace Fields
     {
-        export inline namespace Message
+        inline namespace Message
         {
-            using Type = Parameter<"type", string>;
-            using Text = Parameter<"text", string>;
-            using Role = Parameter<"role", string>;
-
-            using TextContent = Object<Default<Type, Constants::Types::Text>, Text>;
-            using Content = Parameter<"content", List<Fields::TextContent>>;
+            export using Type = Parameter<"type", string>;
+            export using Text = Parameter<"text", string>;
+            export using Role = Parameter<"role", string>;
         }
 
-        export inline namespace Transaction
+        inline namespace Transaction
         {
             using Model = Parameter<"model", string>;
             using System = Parameter<"system", string>;
@@ -66,25 +82,6 @@ export namespace Claude
             using Top_P = Parameter<"top_p", int>;
 
             using Temperature = Parameter<"temperature", float>;
-
-            using MessageContent = Parameter<"content", List<Text>>;
         }
     }
-
-    export using Message = Object<Default<Fields::Role, Constants::User>, Fields::Content>;
-
-    export namespace Fields
-    {
-        using Messages = Parameter<"messages", List<Claude::Message>>;
-    }
-
-
-    export using Transaction = Object<
-                    Default<Fields::Model, Constants::Claude_3_5_Sonnet>,
-                    Default<Fields::Tokens, 1024>,
-                    Fields::System,
-                    Fields::Temperature,
-                    Fields::Top_K,
-                    Fields::Top_P,
-                    Fields::Messages>;
 }
