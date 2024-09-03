@@ -1,5 +1,6 @@
 module;
 
+#include <sstream>
 #include <iostream>
 
 #include <curl/curl.h>
@@ -79,8 +80,8 @@ size_t API::RecieveResponse(char* contents, size_t size, size_t nitems, void* in
 
 API::API(const std::string api_key) : m_Header(nullptr), m_MaxOutgoingSize(16 * 1024),
     m_ApiHeader(std::format("x-api-key: {0}", api_key)),
-    m_VersionHeader(std::format("anthropic-version: {0}", Constants::VersionDate.data())),
-    m_ContentHeader(std::format("content-type: {0}", Constants::ContentType.data()))
+    m_VersionHeader(std::format("anthropic-version: {0}", Constants::VersionDate)),
+    m_ContentHeader(std::format("content-type: {0}", Constants::ContentType))
 {
     static bool GlobalInit = (curl_global_init(CURL_GLOBAL_DEFAULT) == CURLE_OK);
     m_Context = curl_easy_init();
@@ -131,7 +132,10 @@ void API::Send(JSON::Base* t)
         fprintf(stderr, "curl_easy_perform() failed: %s\n",
             curl_easy_strerror(m_LastError));
 
-    std::cout << this->m_ResponseBuffer;
+    //Response * response = new Response();
+    //Remaining = strlen(this->m_ResponseBuffer);
+    //response->Deserialize(m_ResponseBuffer, Remaining);
+    //std::cout << this->m_ResponseBuffer;
 }
 
 template <typename T> requires (std::is_base_of_v<JSON::Base, T>)
